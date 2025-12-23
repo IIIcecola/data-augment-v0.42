@@ -216,7 +216,6 @@ def process_dir(
     """
     批量处理目录下的图片：读取坐标→裁切→生成prompt→推理
     :param coords_json: 裁切坐标JSON文件路径
-    :param max_crop_size: 裁切后最大尺寸限制
     """
     # 创建输出目录结构
     os.makedirs(output_dir, exist_ok=True)
@@ -253,7 +252,7 @@ def process_dir(
         img_path = os.path.join(input_dir, img_filename)
         try:
             print(f"\n===== 处理第 {img_idx+1}/{total_images} 张：{img_filename} =====")
-            original_image = Image.open(image_path).convert('RGB')
+            original_image = Image.open(img_path).convert('RGB')
             original_width, original_height = original_image.size
             print(f"原图尺寸：{original_width}x{original_height}")
             
@@ -274,7 +273,7 @@ def process_dir(
 
             # 裁剪局部图并保存
             cropped_image = crop_image(original_image, adjusted_coords)
-            base_name = os.path.splitext(os.path.basename(image_path))[0]
+            base_name = os.path.splitext(os.path.basename(img_path))[0]
             crop_save_path = os.path.join(hr_crop_dir, f"{base_name}_cropped.jpg")
             cropped_image.save(crop_save_path)
             print(f"已保存裁剪局部图：{crop_save_path}")
