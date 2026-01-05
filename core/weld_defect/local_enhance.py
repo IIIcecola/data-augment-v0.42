@@ -213,7 +213,7 @@ def paste_cropped_image(original_image, cropped_image, coordinates):
     # cropped_resized = cropped_image.resize((x2 - x1, y2 - y1))
     
     result = original_image.copy()
-    result.paste(cropped_resized, (x1, y1))
+    result.paste(cropped_image, (x1, y1))
     return result
 
 def process_single_image(
