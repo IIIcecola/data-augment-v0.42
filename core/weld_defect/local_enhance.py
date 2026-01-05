@@ -84,9 +84,21 @@ def get_crop_coordinates(original_width, original_height, x1, y1, x2, y2, pipe):
     new_y2 = min(original_height, y2 + (height_diff - height_diff // 2))
     
     # 最终校验（避免因原图边界导致的尺寸偏差）
-    final_width = new_x2 - new_x1
-    final_height = new_y2 - new_y1
-    final_height, final_width = pipe.check_resize_height_width(final_height, final_width)
+    # final_width = new_x2 - new_x1
+    # final_height = new_y2 - new_y1
+    # final_height, final_width = pipe.check_resize_height_width(final_height, final_width)
+
+    # 如果因为边界限制导致尺寸变化，再次调整
+    if (new_x2 - new_x1) != adjusted_width or (new_y2 - new_y1) != adjusted_height:
+        # 重新计算实际尺寸并调整
+        actual_width = new_x2 - new_x1
+        actual_height = new_y2 - new_y1
+        adjusted_height, adjusted_width = pipe.check_resize_height_width(actual_height, actual_width)
+        # 再次调整坐标
+        new_x1 = max(0, center_x - adjusted_width // 2)
+        new_y1 = max(0, center_y - adjusted_height // 2)
+        new_x2 = min(original_width, new_x1 + adjusted_width)
+        new_y2 = min(original_height, new_y1 + adjusted_height)
     
     return (x1, y1, x2, y2), (new_x1, new_y1, new_x2, new_y2), (final_width, final_height)
 
@@ -97,8 +109,17 @@ def crop_image(image, coordinates):
 def paste_cropped_image(original_image, cropped_image, coordinates):
     """将裁剪区域图片粘贴回原图"""
     x1, y1, x2, y2 = coordinates
+    expected_width = x2 - x1
+    expected_height = y2 - y1
+
+    # 检查尺寸是否匹配
+    if cropped_image.size != (expected_width, expected_height):
+        print(f"警告: 裁剪图像尺寸{cropped_image.size}与坐标区域尺寸({expected_width}, {expected_height})不匹配")
+        print(f"正在调整裁剪图像尺寸...")
+        cropped_image = cropped_image.resize((expected_width, expected_height))
     # 确保尺寸匹配
-    cropped_resized = cropped_image.resize((x2 - x1, y2 - y1))
+    # cropped_resized = cropped_image.resize((x2 - x1, y2 - y1))
+    
     result = original_image.copy()
     result.paste(cropped_resized, (x1, y1))
     return result
