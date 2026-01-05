@@ -100,7 +100,7 @@ def get_crop_coordinates(original_width, original_height, x1, y1, x2, y2, pipe):
         new_x2 = min(original_width, new_x1 + adjusted_width)
         new_y2 = min(original_height, new_y1 + adjusted_height)
     
-    return (x1, y1, x2, y2), (new_x1, new_y1, new_x2, new_y2), (final_width, final_height)
+    return (x1, y1, x2, y2), (new_x1, new_y1, new_x2, new_y2),  (adjusted_width, adjusted_height)
 
 def crop_image(image, coordinates):
     x1, y1, x2, y2 = coordinates
