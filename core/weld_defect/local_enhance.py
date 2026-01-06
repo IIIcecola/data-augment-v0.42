@@ -165,15 +165,14 @@ def get_crop_coordinates(original_width, original_height, x1, y1, x2, y2, pipe):
     
     # 使用模型方法调整尺寸为16的倍数
     adjusted_height, adjusted_width = pipe.check_resize_height_width(crop_height, crop_width)
+
+    center_x = (x1 + x2) // 2
+    center_y = (y1 + y2) // 2
     
-    # 计算尺寸调整后的坐标偏移（保持中心不变）
-    width_diff = adjusted_width - crop_width
-    height_diff = adjusted_height - crop_height
-    
-    new_x1 = max(0, x1 - width_diff // 2)
-    new_x2 = min(original_width, x2 + (width_diff - width_diff // 2))
-    new_y1 = max(0, y1 - height_diff // 2)
-    new_y2 = min(original_height, y2 + (height_diff - height_diff // 2))
+    new_x1 = max(0, center_x - adjusted_width // 2)
+    new_y1 = max(0, center_y - adjusted_height // 2)
+    new_x2 = min(original_width, new_x1 + adjusted_width)
+    new_y2 = min(original_height, new_y1 + adjusted_height)
     
     # 最终校验（避免因原图边界导致的尺寸偏差）
     # final_width = new_x2 - new_x1
