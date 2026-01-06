@@ -151,69 +151,87 @@ def get_crop_coordinates(original_width, original_height, x1, y1, x2, y2, pipe):
     处理用户输入的裁剪坐标，确保裁剪区域尺寸为16的倍数
     返回微调后的坐标和裁剪区域尺寸
     """
-    # 确保坐标合法性（左上角<=右下角，且在原图范围内）
+    # 1. 基础合法性校验（确保坐标在原图范围内，且左上<=右下）
+    x1 = max(0, min(int(round(x1)), original_width))
+    y1 = max(0, min(int(round(y1)), original_height))
+    x2 = max(0, min(int(round(x2)), original_width))
+    y2 = max(0, min(int(round(y2)), original_height))
     x1, x2 = sorted([x1, x2])
     y1, y2 = sorted([y1, y2])
-    x1 = max(0, min(x1, original_width))
-    x2 = max(0, min(x2, original_width))
-    y1 = max(0, min(y1, original_height))
-    y2 = max(0, min(y2, original_height))
-    
-    # 计算原始裁剪尺寸
+
+    # 2. 计算原始裁剪尺寸并调整为16的倍数
     crop_width = x2 - x1
     crop_height = y2 - y1
-    
-    # 使用模型方法调整尺寸为16的倍数
     adjusted_height, adjusted_width = pipe.check_resize_height_width(crop_height, crop_width)
 
-    center_x = (x1 + x2) // 2
-    center_y = (y1 + y2) // 2
-    
-    new_x1 = max(0, center_x - adjusted_width // 2)
-    new_y1 = max(0, center_y - adjusted_height // 2)
-    new_x2 = min(original_width, new_x1 + adjusted_width)
-    new_y2 = min(original_height, new_y1 + adjusted_height)
-    
-    # 最终校验（避免因原图边界导致的尺寸偏差）
-    # final_width = new_x2 - new_x1
-    # final_height = new_y2 - new_y1
-    # final_height, final_width = pipe.check_resize_height_width(final_height, final_width)
+    # 3. 计算裁剪中心（修复原代码center_x/center_y未定义的BUG）
+    center_x = x1 + crop_width / 2
+    center_y = y1 + crop_height / 2
 
-    # 如果因为边界限制导致尺寸变化，再次调整
-    if (new_x2 - new_x1) != adjusted_width or (new_y2 - new_y1) != adjusted_height:
-        # 重新计算实际尺寸并调整
-        actual_width = new_x2 - new_x1
-        actual_height = new_y2 - new_y1
-        adjusted_height, adjusted_width = pipe.check_resize_height_width(actual_height, actual_width)
-        # 再次调整坐标
-        new_x1 = max(0, center_x - adjusted_width // 2)
-        new_y1 = max(0, center_y - adjusted_height // 2)
-        new_x2 = min(original_width, new_x1 + adjusted_width)
-        new_y2 = min(original_height, new_y1 + adjusted_height)
-    
-    return (x1, y1, x2, y2), (new_x1, new_y1, new_x2, new_y2),  (adjusted_width, adjusted_height)
+    # 4. 基于中心调整坐标（优先保证中心不变，边界兜底）
+    new_x1 = max(0, int(round(center_x - adjusted_width / 2)))
+    new_y1 = max(0, int(round(center_y - adjusted_height / 2)))
+    new_x2 = new_x1 + adjusted_width
+    new_y2 = new_y1 + adjusted_height
+
+    # 5. 最终边界校验（若调整后超出原图，强制拉回并重新计算中心）
+    if new_x2 > original_width:
+        new_x2 = original_width
+        new_x1 = new_x2 - adjusted_width
+    if new_y2 > original_height:
+        new_y2 = original_height
+        new_y1 = new_y2 - adjusted_height
+    # 兜底：若仍为负，强制置0并重新计算右/下坐标
+    new_x1 = max(0, new_x1)
+    new_y1 = max(0, new_y1)
+    new_x2 = new_x1 + adjusted_width
+    new_y2 = new_y1 + adjusted_height
+
+    # 6. 最终尺寸二次校验（确保万无一失）
+    final_width = new_x2 - new_x1
+    final_height = new_y2 - new_y1
+    assert final_width == adjusted_width, f"宽度不匹配：{final_width} vs {adjusted_width}"
+    assert final_height == adjusted_height, f"高度不匹配：{final_height} vs {adjusted_height}"
+    assert new_x1 >=0 and new_x2 <= original_width, f"X坐标越界：{new_x1},{new_x2} (原图宽{original_width})"
+    assert new_y1 >=0 and new_y2 <= original_height, f"Y坐标越界：{new_y1},{new_y2} (原图高{original_height})"
+
+    return (x1, y1, x2, y2), (new_x1, new_y1, new_x2, new_y2), (adjusted_width, adjusted_height)
 
 def crop_image(image, coordinates):
     x1, y1, x2, y2 = coordinates
     return image.crop((x1, y1, x2, y2))
 
-def paste_cropped_image(original_image, cropped_image, coordinates):
-    """将裁剪区域图片粘贴回原图"""
-    x1, y1, x2, y2 = coordinates
-    expected_width = x2 - x1
-    expected_height = y2 - y1
+def paste_cropped_image(original_image, enhanced_crop, adjusted_coords):
+    """
+    将增强后的局部图粘贴回原图，确保像素级对齐
+    :param original_image: PIL.Image对象（RGB模式）
+    :param enhanced_crop: PIL.Image对象（RGB模式，增强后的局部图）
+    :param adjusted_coords: 微调后的裁剪坐标 (new_x1, new_y1, new_x2, new_y2)
+    :return: 粘贴后的PIL.Image对象
+    """
+    new_x1, new_y1, new_x2, new_y2 = adjusted_coords
+    crop_width = new_x2 - new_x1
+    crop_height = new_y2 - new_y1
 
-    # 检查尺寸是否匹配
-    if cropped_image.size != (expected_width, expected_height):
-        print(f"警告: 裁剪图像尺寸{cropped_image.size}与坐标区域尺寸({expected_width}, {expected_height})不匹配")
-        print(f"正在调整裁剪图像尺寸...")
-        cropped_image = cropped_image.resize((expected_width, expected_height))
-    # 确保尺寸匹配
-    # cropped_resized = cropped_image.resize((x2 - x1, y2 - y1))
+    # 1. 强制增强图尺寸与裁剪区域一致（避免模型隐性缩放）
+    enhanced_crop = enhanced_crop.resize((crop_width, crop_height), Image.Resampling.LANCZOS)
     
-    result = original_image.copy()
-    result.paste(cropped_image, (x1, y1))
-    return result
+    # 2. 转换为numpy数组操作（避免PIL paste的隐式模式问题）
+    original_np = np.array(original_image)
+    crop_np = np.array(enhanced_crop)
+
+    # 3. 像素级粘贴（确保维度匹配）
+    assert original_np.ndim == 3 and crop_np.ndim == 3, "图像必须为RGB三通道"
+    assert original_np.shape[2] == 3 and crop_np.shape[2] == 3, "通道数必须为3"
+    assert crop_np.shape[0] == crop_height and crop_np.shape[1] == crop_width, \
+        f"增强图尺寸不匹配：{crop_np.shape[:2]} vs 裁剪区域{crop_height}*{crop_width}"
+
+    # 4. 执行粘贴（直接替换像素，无插值/模糊）
+    original_np[new_y1:new_y2, new_x1:new_x2, :] = crop_np
+
+    # 5. 转回PIL对象
+    final_image = Image.fromarray(original_np)
+    return final_image
 
 def process_single_image(
     image_path,
@@ -415,6 +433,14 @@ def process_dir(
                 enhanced_crop.save(enhanced_crop_save_path)
                 print(f"已保存增强局部图：{enhanced_crop_save_path}")
 
+                # 打印信息
+                print(f"=== 增强图信息 ===")
+                print(f"增强图模式：{enhanced_crop.mode}")
+                print(f"增强图尺寸：{enhanced_crop.size} (w*h)")
+                print(f"增强图像素形状：{np.array(enhanced_crop).shape}")
+                print(f"原图模式：{original_image.mode}")
+                print(f"原图像素形状：{np.array(original_image).shape}")
+                
                 # 缝合回原图并保存
                 final_image = paste_cropped_image(original_image, enhanced_crop, adjusted_coords)
                 final_save_path = os.path.join(weld_enhanced_dir, f"{base_name}_enhanced_prompt{prompt_idx}.jpg")
